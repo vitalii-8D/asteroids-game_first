@@ -18,6 +18,7 @@
    const SHIP_SIZE = 30; //height of the ship
    const TURN_SPEED = 360; //
    const SHIP_THRUST = 5;
+   const MAX_THRUST = 4;
 
    /** @type {HTMLCanvasElement} */
    var canv = document.getElementById('gameCanvas');
@@ -86,8 +87,12 @@
 
       // thrust the ship
       if (ship.thrusting) {
-         ship.thrust.x += SHIP_THRUST * Math.cos(ship.a) / FPS;
-         ship.thrust.y -= SHIP_THRUST * Math.sin(ship.a) / FPS;
+         const currentThrust = Math.sqrt(Math.abs(ship.thrust.x^2) + Math.abs(ship.thrust.y^2));
+         console.log(currentThrust);
+         if (currentThrust <= MAX_THRUST) {
+            ship.thrust.x += SHIP_THRUST * Math.cos(ship.a) / FPS;
+            ship.thrust.y -= SHIP_THRUST * Math.sin(ship.a) / FPS;
+         }
 
          //draw the thrusting
          ctx.fillStyle = 'red';
@@ -120,16 +125,16 @@
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(  // nose of the ship
-         ship.x + 4 / 3 * ship.r * Math.cos(ship.a),
-         ship.y - 4 / 3 * ship.r * Math.sin(ship.a)
+         ship.x + ship.r * Math.cos(ship.a),
+         ship.y - ship.r * Math.sin(ship.a)
       )
       ctx.lineTo( // rear left
-         ship.x - ship.r * (2 / 3 * Math.cos(ship.a) + Math.sin(ship.a)),
-         ship.y + ship.r * (2 / 3 * Math.sin(ship.a) - Math.cos(ship.a))
+         ship.x - ship.r * (2 / 3 * Math.cos(ship.a) + 2 / 3 * Math.sin(ship.a)),
+         ship.y + ship.r * (2 / 3 * Math.sin(ship.a) - 2 / 3 * Math.cos(ship.a))
       )
       ctx.lineTo( // rear right
-         ship.x - ship.r * (2 / 3 * Math.cos(ship.a) - Math.sin(ship.a)),
-         ship.y + ship.r * (2 / 3 * Math.sin(ship.a) + Math.cos(ship.a))
+         ship.x - ship.r * (2 / 3 * Math.cos(ship.a) - 2 / 3 * Math.sin(ship.a)),
+         ship.y + ship.r * (2 / 3 * Math.sin(ship.a) + 2 / 3 * Math.cos(ship.a))
       )
       ctx.closePath();
       ctx.stroke();
