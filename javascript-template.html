@@ -15,31 +15,46 @@
 <script>
    const FPS = 30;
    const FRICTION = 0.7;
+   const LASER_DIST = 0.4;
+   const LASER_MAX = 10;
+   const LASER_SPD = 500;
+   const LASER_EXPLODE_DUR = 0.1;
+   const ROIDS_JAG = 0.4;
+   const ROIDS_NUM = 1; // starting number of asteroids
+   const ROIDS_SIZE = 100;
+   const ROIDS_SPD = 50;
+   const ROIDS_VERT = 10; // average number of vertices of each asteroids
    const SHIP_SIZE = 30; //height of the ship
+   const SHIP_INVIS_DUR = 3; //height of the ship
+   const SHIP_BLINK_DUR = 0.1; //height of the ship
    const TURN_SPEED = 360; //
    const SHIP_THRUST = 5;
    const MAX_THRUST = 4;
+   const SHOW_BOUNDING = false;
+   const SHOW_CENTER_DOT = false;
+   const SHIP_EXPLODE_DUR = 0.3;
 
    /** @type {HTMLCanvasElement} */
    var canv = document.getElementById('gameCanvas');
    var ctx = canv.getContext('2d');
 
-   var ship = {
-      x: canv.width / 2,
-      y: canv.height / 2,
-      r: SHIP_SIZE / 2,
-      a: 90 / 180 * Math.PI, // convert to radians
-      rot: 0,
-      thrusting: false,
-      thrust: {
-         x: 0,
-         y: 0
-      }
+   // set up the game parameters
+   var level, roids = [], ship;
+   newGame();
+
+   function newGame() {
+      level = 0;
+      newShip()
+      newLevel();
    }
 
-   // set up the asteroids
-   var roids = [];
-   createAsteroidBelt();
+   function newShip() {
+      ship = createShip();
+   }
+
+    function newLevel() {
+       createAsteroidBelt();
+    }
 
    // set EventListeners
    document.addEventListener('keydown', keyDown);
@@ -47,12 +62,90 @@
 
    setInterval(update, 1000 / FPS);
 
+   function createShip() {
+      return {
+         x: canv.width / 2,
+         y: canv.height / 2,
+         r: SHIP_SIZE / 2,
+         a: 90 / 180 * Math.PI, // convert to radians
+         blinkNum: Math.ceil(SHIP_INVIS_DUR / SHIP_BLINK_DUR),
+         blinkTime: Math.ceil(SHIP_BLINK_DUR * FPS),
+         canShoot: true,
+         lasers: [],
+         rot: 0,
+         explodeTime: 0,
+         thrusting: false,
+         thrust: {
+            x: 0,
+            y: 0
+         }
+      }
+   }
+
+   function shootLaser() {
+      // create the laser
+      if (ship.canShoot && ship.lasers.length < LASER_MAX) {
+         ship.lasers.push({ // from the nose of the ship
+            x: ship.x + ship.r * 4 / 3 * Math.cos(ship.a),
+            y: ship.y - ship.r * 4 / 3 * Math.sin(ship.a),
+            xv: LASER_SPD * Math.cos(ship.a) / FPS,
+            yv: -LASER_SPD * Math.sin(ship.a) / FPS,
+            dist: 0,
+            explodeTime: 0
+         })
+      }
+
+      // prevent further shooting
+      ship.canShoot = false;
+   }
+
    function createAsteroidBelt() {
       roids = [];
+      var x, y;
+      for (var i = 0; i < ROIDS_NUM + level; i++) {
+         do {
+            x = Math.floor(Math.random() * canv.width)
+            y = Math.floor(Math.random() * canv.height)
+         } while (distBetweenPoints(ship.x, ship.y, x, y) < ROIDS_SIZE * 2 + ship.r)
+
+         roids.push(newAsteroid(x, y, Math.ceil(ROIDS_SIZE / 2)));
+      }
+   }
+
+   function destroyAsteroid(index) {
+      const {x, y, r} = roids[index];
+
+      // split asteroid in two if necessary
+      if (r == Math.ceil(ROIDS_SIZE / 2)) {
+         roids.push(newAsteroid(x, y, Math.ceil(ROIDS_SIZE / 4)))
+         roids.push(newAsteroid(x, y, Math.ceil(ROIDS_SIZE / 4)))
+      } else if (r == Math.ceil(ROIDS_SIZE / 4)) {
+         roids.push(newAsteroid(x, y, Math.ceil(ROIDS_SIZE / 8)))
+         roids.push(newAsteroid(x, y, Math.ceil(ROIDS_SIZE / 8)))
+      }
+
+      roids.splice(index, 1);
+
+      // new level shen no more asteroids
+      if (roids.length == 0) {
+         level++;
+         newLevel();
+      }
+   }
+
+   function distBetweenPoints(x1, y1, x2, y2) {
+      return Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2))
+   }
+
+   function explodeShip() {
+      ship.explodeTime = Math.ceil(SHIP_EXPLODE_DUR * FPS)
    }
 
    function keyDown(ev) {
       switch (ev.keyCode) {
+         case 32: // laser shooting
+            shootLaser();
+            break;
          case 37: // left rotate
             ship.rot = TURN_SPEED / 180 * Math.PI / FPS
             break;
@@ -64,8 +157,12 @@
             break;
       }
    }
+
    function keyUp(ev) {
       switch (ev.keyCode) {
+         case 32: // allow shooting
+            ship.canShoot = true;
+            break;
          case 37: // left rotate
             ship.rot = 0
             break;
@@ -78,73 +175,240 @@
       }
    }
 
-   function update() {
-      //draw space
+   function newAsteroid(x, y, r) {
+      var lvlMult = 1 + 0.1 * level;
+      var roid = {
+         x,
+         y,
+         xv: Math.random() * ROIDS_SPD * lvlMult / FPS * (Math.random() < 0.5 ? 1 : -1),
+         yv: Math.random() * ROIDS_SPD * lvlMult / FPS * (Math.random() < 0.5 ? 1 : -1),
+         r: r,
+         a: Math.random() * Math.PI * 2,
+         vert: Math.floor(Math.random() * (ROIDS_VERT + 1) + ROIDS_VERT / 2),
+         offs: []
+      };
 
+      for (var i = 0; i < roid.vert; i++) {
+         roid.offs.push(Math.random() * ROIDS_JAG * 2 + 1 - ROIDS_JAG)
+      }
+
+      return roid;
+   }
+
+   function update() {
+      var blinkOn = ship.blinkNum % 2 === 0;
+      var exploding = ship.explodeTime > 0;
+
+      //draw space
       ctx.fillStyle = 'black';
       ctx.fillRect(0, 0, canv.width, canv.height)
 
 
       // thrust the ship
       if (ship.thrusting) {
-         const currentThrust = Math.sqrt(Math.abs(ship.thrust.x^2) + Math.abs(ship.thrust.y^2));
-         console.log(currentThrust);
+         const currentThrust = Math.sqrt(Math.abs(ship.thrust.x ^ 2) + Math.abs(ship.thrust.y ^ 2));
+
          if (currentThrust <= MAX_THRUST) {
             ship.thrust.x += SHIP_THRUST * Math.cos(ship.a) / FPS;
             ship.thrust.y -= SHIP_THRUST * Math.sin(ship.a) / FPS;
          }
 
          //draw the thrusting
-         ctx.fillStyle = 'red';
-         ctx.strokeStyle = 'yellow';
-         ctx.lineWidth = SHIP_SIZE / 20;
-         ctx.beginPath();
-         ctx.moveTo(  //
-            ship.x - ship.r * (2 / 3 * Math.cos(ship.a) + 0.3 * Math.sin(ship.a)),
-            ship.y + ship.r * (2 / 3 * Math.sin(ship.a) - 0.3 * Math.cos(ship.a))
-         )
-         ctx.lineTo( //
-            ship.x - ship.r * 1.5 * Math.cos(ship.a),
-            ship.y + ship.r * 1.5 * Math.sin(ship.a)
-         )
-         ctx.lineTo( //
-            ship.x - ship.r * (2 / 3 * Math.cos(ship.a) - 0.3 * Math.sin(ship.a)),
-            ship.y + ship.r * (2 / 3 * Math.sin(ship.a) + 0.3 * Math.cos(ship.a))
-         )
-         ctx.closePath();
-         ctx.stroke();
-         ctx.fill();
+         if (!exploding && blinkOn) {
+            ctx.fillStyle = 'red';
+            ctx.strokeStyle = 'yellow';
+            ctx.lineWidth = SHIP_SIZE / 20;
+            ctx.beginPath();
+            ctx.moveTo(  //
+               ship.x - ship.r * (2 / 3 * Math.cos(ship.a) + 0.3 * Math.sin(ship.a)),
+               ship.y + ship.r * (2 / 3 * Math.sin(ship.a) - 0.3 * Math.cos(ship.a))
+            )
+            ctx.lineTo( //
+               ship.x - ship.r * 1.5 * Math.cos(ship.a),
+               ship.y + ship.r * 1.5 * Math.sin(ship.a)
+            )
+            ctx.lineTo( //
+               ship.x - ship.r * (2 / 3 * Math.cos(ship.a) - 0.3 * Math.sin(ship.a)),
+               ship.y + ship.r * (2 / 3 * Math.sin(ship.a) + 0.3 * Math.cos(ship.a))
+            )
+            ctx.closePath();
+            ctx.stroke();
+            ctx.fill();
+         }
       } else {
          ship.thrust.x -= FRICTION * ship.thrust.x / FPS;
          ship.thrust.y -= FRICTION * ship.thrust.y / FPS;
       }
 
-      //draw ship
-      ctx.strokeStyle = 'white';
-      // ctx.lineWidth = SHIP_SIZE / 8;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(  // nose of the ship
-         ship.x + ship.r * Math.cos(ship.a),
-         ship.y - ship.r * Math.sin(ship.a)
-      )
-      ctx.lineTo( // rear left
-         ship.x - ship.r * (2 / 3 * Math.cos(ship.a) + 2 / 3 * Math.sin(ship.a)),
-         ship.y + ship.r * (2 / 3 * Math.sin(ship.a) - 2 / 3 * Math.cos(ship.a))
-      )
-      ctx.lineTo( // rear right
-         ship.x - ship.r * (2 / 3 * Math.cos(ship.a) - 2 / 3 * Math.sin(ship.a)),
-         ship.y + ship.r * (2 / 3 * Math.sin(ship.a) + 2 / 3 * Math.cos(ship.a))
-      )
-      ctx.closePath();
-      ctx.stroke();
+      if (!exploding) {
+         //draw ship
+         if (blinkOn) {
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = SHIP_SIZE / 20;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(  // nose of the ship
+               ship.x + ship.r * 4 / 3 * Math.cos(ship.a),
+               ship.y - ship.r * 4 / 3 * Math.sin(ship.a)
+            )
+            ctx.lineTo( // rear left
+               ship.x - ship.r * (2 / 3 * Math.cos(ship.a) + Math.sin(ship.a)),
+               ship.y + ship.r * (2 / 3 * Math.sin(ship.a) - Math.cos(ship.a))
+            )
+            ctx.lineTo( // rear right
+               ship.x - ship.r * (2 / 3 * Math.cos(ship.a) - Math.sin(ship.a)),
+               ship.y + ship.r * (2 / 3 * Math.sin(ship.a) + Math.cos(ship.a))
+            )
+            ctx.closePath();
+            ctx.stroke();
+         }
 
-      //rotate ship
-      ship.a += ship.rot;
+         // handle blinkink
+         if (ship.blinkNum > 0) {
+            ship.blinkTime--;
 
-      //move ship
-      ship.x += ship.thrust.x;
-      ship.y += ship.thrust.y;
+            if (ship.blinkTime == 0) {
+               ship.blinkTime = Math.ceil(SHIP_BLINK_DUR * FPS);
+               ship.blinkNum--;
+            }
+         }
+
+      } else {
+         ctx.fillStyle = 'darkred';
+         ctx.beginPath();
+         ctx.arc(ship.x, ship.y, ship.r * 1.5, 0, Math.PI * 2, false);
+         ctx.fill();
+         ctx.fillStyle = 'orange';
+         ctx.beginPath();
+         ctx.arc(ship.x, ship.y, ship.r * 1, 0, Math.PI * 2, false);
+         ctx.fill();
+         ctx.fillStyle = 'yellow';
+         ctx.beginPath();
+         ctx.arc(ship.x, ship.y, ship.r * 0.6, 0, Math.PI * 2, false);
+         ctx.fill();
+         ctx.fillStyle = 'white';
+         ctx.beginPath();
+         ctx.arc(ship.x, ship.y, ship.r * 0.4, 0, Math.PI * 2, false);
+         ctx.fill();
+      }
+
+      // show bounding
+      if (SHOW_BOUNDING) {
+         ctx.strokeStyle = 'lime';
+         ctx.beginPath();
+         ctx.arc(ship.x, ship.y, ship.r, 0, Math.PI * 2, false);
+         ctx.stroke();
+      }
+
+      // draw the asteroids
+      for (var i = 0; i < roids.length; i++) {
+         ctx.strokeStyle = 'slategrey';
+         ctx.lineWidth = SHIP_SIZE / 20;
+
+         //get asteroids properties
+         var {x, y, r, a, vert, offs} = roids[i];
+
+         // draw a path
+         ctx.beginPath();
+         ctx.moveTo(
+            x + r * offs[0] * Math.cos(a),
+            y + r * offs[0] * Math.sin(a)
+         )
+
+         //draw a palygon
+         for (var j = 1; j < vert; j++) {
+            ctx.lineTo(
+               x + r * offs[j] * Math.cos(a + j * Math.PI * 2 / vert),
+               y + r * offs[j] * Math.sin(a + j * Math.PI * 2 / vert)
+            )
+         }
+         ctx.closePath();
+         ctx.stroke();
+
+         if (SHOW_BOUNDING) {
+            ctx.strokeStyle = 'lime';
+            ctx.beginPath();
+            ctx.arc(roids[i].x, roids[i].y, roids[i].r, 0, Math.PI * 2, false);
+            ctx.stroke();
+         }
+      }
+
+      // draw lasers
+      for (var i = 0; i < ship.lasers.length; i++) {
+         if (ship.lasers[i].explodeTime == 0) {
+            ctx.fillStyle = 'salmon';
+            ctx.beginPath();
+            ctx.arc(ship.lasers[i].x, ship.lasers[i].y, SHIP_SIZE / 15, 0, Math.PI * 2);
+            ctx.fill();
+         } else {
+            ctx.fillStyle = 'orangered';
+            ctx.beginPath();
+            ctx.arc(ship.lasers[i].x, ship.lasers[i].y, ship.r * 0.75, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = 'salmon';
+            ctx.beginPath();
+            ctx.arc(ship.lasers[i].x, ship.lasers[i].y, ship.r * 0.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = 'pink';
+            ctx.beginPath();
+            ctx.arc(ship.lasers[i].x, ship.lasers[i].y, ship.r * 0.25, 0, Math.PI * 2);
+            ctx.fill();
+         }
+      }
+
+      // detect laser hits
+      var ax, ay, ar, lx, ly, lr;
+      for (var i = roids.length - 1; i >= 0; i--) {
+         const {x: ax, y: ay, r: ar} = roids[i];
+
+         // loop over the lasers
+         for (var j = ship.lasers.length - 1; j >= 0; j--) {
+            const {x: lx, y: ly} = ship.lasers[j];
+
+            // detect hits
+            if (ship.lasers[j].explodeTime == 0 && distBetweenPoints(ax, ay, lx, ly) < ar) {
+               // remove laser
+               // ship.lasers.splice(j, 1);
+
+               // destroy the asteroid and active laser explosion
+               ship.lasers[j].explodeTime = Math.ceil(LASER_EXPLODE_DUR * FPS)
+
+               // remove the asteroid
+               destroyAsteroid(i)
+               // roids.splice(i, 1)
+
+               break;
+            }
+         }
+      }
+
+
+      if (!exploding) {
+         // check asteroid collision
+         if (ship.blinkNum === 0) {
+            for (var i = 0; i < roids.length; i++) {
+               if (distBetweenPoints(ship.x, ship.y, roids[i].x, roids[i].y) < ship.r + roids[i].r) {
+                  explodeShip();
+                  destroyAsteroid(i);
+                  break;
+               }
+            }
+         }
+
+         //rotate ship
+         ship.a += ship.rot;
+
+         //move ship
+         ship.x += ship.thrust.x;
+         ship.y += ship.thrust.y;
+      } else {
+         ship.explodeTime--;
+         if (ship.explodeTime == 0) {
+            ship = createShip();
+         }
+      }
+
+
       // handle the edges
       if (ship.x < 0 - ship.r) {
          ship.x = canv.width + ship.r;
@@ -158,9 +422,71 @@
          ship.y = 0 - ship.r;
       }
 
+      // move lasers
+      for (var i = ship.lasers.length - 1; i >= 0; i--) {
+         //check distance travelled
+         if (ship.lasers[i].dist > LASER_DIST * canv.width) {
+            ship.lasers.splice(i, 1);
+            continue;
+         }
+
+         // handle the explosion
+         if (ship.lasers[i].explodeTime > 0) {
+            ship.lasers[i].xv = 0;
+            ship.lasers[i].yv = 0;
+            ship.lasers[i].explodeTime--;
+
+            // destroy the laser after the duration is up
+            if (ship.lasers[i].explodeTime === 0) {
+               ship.lasers.splice(i, 1);
+               continue;
+            }
+         }
+
+         ship.lasers[i].x += ship.lasers[i].xv;
+         ship.lasers[i].y += ship.lasers[i].yv;
+
+         // calculate the distance traveller
+         ship.lasers[i].dist += Math.sqrt(Math.pow(ship.lasers[i].xv, 2) + Math.pow(ship.lasers[i].yv, 2))
+
+         //handle edge of the screen
+         if (ship.lasers[i].x < 0) {
+            ship.lasers[i].x = canv.width;
+         } else if (ship.lasers[i].x > canv.width) {
+            ship.lasers[i].x = 0;
+         }
+         if (ship.lasers[i].y < 0) {
+            ship.lasers[i].y = canv.height;
+         } else if (ship.lasers[i].y > canv.height) {
+            ship.lasers[i].y = 0;
+         }
+      }
+
+      // move the asteroids
+      for (var i = 0; i < roids.length; i++) {
+         //move the asteroid
+         roids[i].x += roids[i].xv;
+         roids[i].y += roids[i].yv;
+
+         //handle edge of hte screen
+         if (roids[i].x < 0 - roids[i].r) {
+            roids[i].x = canv.width + roids[i].r;
+         } else if (roids[i].x > canv.width + roids[i].r) {
+            roids[i].x = 0 - roids[i].r
+         } else if (roids[i].y < 0 - roids[i].r) {
+            roids[i].y = canv.height + roids[i].r;
+         } else if (roids[i].y > canv.height + roids[i].r) {
+            roids[i].y = 0 - roids[i].r
+         }
+      }
+
       // center dot
-      ctx.fillStyle = 'red';
-      ctx.fillRect(ship.x - 1, ship.y - 1, 2, 2)
+      if (SHOW_CENTER_DOT) {
+         ctx.fillStyle = 'red';
+         ctx.fillRect(ship.x - 1, ship.y - 1, 2, 2)
+      }
+
+
    }
 
 </script>
